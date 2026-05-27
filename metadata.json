@@ -1,0 +1,8 @@
+{
+  "name": "FleetTax Pro AI",
+  "description": "Enterprise IFTA, Fuel Tax, Fleet Compliance and FMCSA optimization SaaS for trucking compliance management.",
+  "requestFramePermissions": [],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}
