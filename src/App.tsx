@@ -21,10 +21,13 @@ import IrpHutOregon from './components/IrpHutOregon';
 import ReportingCenter from './components/ReportingCenter';
 import SaaSAdminMobileBilling from './components/SaaSAdminMobileBilling';
 
-import { Vehicle, Driver, FuelPurchase, TaxRate, GpsLog, ComplianceAlert, ChatMessage, UserRole, FleetCompliance } from './types';
+import { Vehicle, Driver, FuelPurchase, TaxRate, GpsLog, ComplianceAlert, ChatMessage, UserRole, FleetCompliance, User } from './types';
 
 export default function App() {
+  const [isAuthenticated, setIsAuthenticated] = useState(false);
+  const [loginForm, setLoginForm] = useState({ email: 'owner@fleettax.com', password: 'password123' });
   const [activeTab, setActiveTab] = useState('dashboard');
+  const [currentUser, setCurrentUser] = useState<User | null>(null);
   const [currentRole, setCurrentRole] = useState<UserRole>('Super Admin');
   const [isSidebarOpen, setIsSidebarOpen] = useState(true);
 
@@ -81,8 +84,8 @@ export default function App() {
   };
 
   useEffect(() => {
-    refreshAllData();
-  }, []);
+    if (isAuthenticated) refreshAllData();
+  }, [isAuthenticated]);
 
   // Post Actions to server APIs ensuring fully real code path executions
   const handleAddVehicle = async (vehicle: Partial<Vehicle>) => {
@@ -216,20 +219,130 @@ export default function App() {
     triggerToast("Chat ledger history purged.");
   };
 
-  // Navigations lists matching RBAC permission rules
+  const handleLogin = async (e: React.FormEvent) => {
+    e.preventDefault();
+    try {
+      const res = await fetch('/api/login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(loginForm)
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setCurrentUser(data.user);
+        setCurrentRole(data.user.role);
+        setIsAuthenticated(true);
+        triggerToast(`Logged in as ${data.user.name}`);
+        await refreshAllData();
+      } else {
+        triggerToast("Invalid login credentials.");
+      }
+    } catch {
+      triggerToast("Login failed. Check server connection.");
+    }
+  };
+
+  const handleFuelCardSync = async () => {
+    try {
+      const res = await fetch('/api/fuel/card-sync');
+      if (res.ok) {
+        const result = await res.json();
+        triggerToast(`Successfully synced ${result.data.length} transactions from fuel cards!`);
+        await refreshAllData();
+      }
+    } catch {
+      triggerToast("Fuel card sync failed.");
+    }
+  };
+
+  // ... (keep helper functions like refreshAllData, handleAddVehicle, etc.)
+
+  // Navigations lists matching RBAC permission rules - REMOVED tracking and compliance
   const mainNavigation = [
     { id: 'dashboard', name: 'Compliance Odometer', icon: Compass },
     { id: 'fleet', name: 'Fleet Vehicles & CDLs', icon: Truck },
-    { id: 'tracking', name: 'Live GPS Odometer', icon: Navigation },
     { id: 'ifta', name: 'IFTA Quarterly filings', icon: Scale },
     { id: 'rates', name: 'Real-time sync matrix', icon: Database },
     { id: 'fuel', name: 'Fuel purchases OCR', icon: Fuel },
-    { id: 'compliance', name: 'Drug Consortium Hub', icon: GovIcon },
     { id: 'ai', name: 'AI Compliance Copilot', icon: Brain },
     { id: 'alternative-tax', name: 'IRP, HUT & Oregon Tax', icon: Landmark },
     { id: 'reporting', name: 'Dynamic Audit Exports', icon: FileSpreadsheet },
     { id: 'settings', name: 'Stripe, QB & RBAC Sandbox', icon: Settings },
   ];
+
+  if (!isAuthenticated) {
+    return (
+      <div className="min-h-screen bg-slate-900 flex items-center justify-center p-4">
+        <div className="bg-white rounded-2xl p-8 w-full max-w-md shadow-2xl space-y-6">
+          <div className="text-center space-y-2">
+            <div className="w-12 h-12 bg-sky-100 text-sky-600 rounded-xl flex items-center justify-center mx-auto mb-4">
+              <Compass className="w-8 h-8 animate-spin" style={{ animationDuration: '40s' }} />
+            </div>
+            <h1 className="text-2xl font-black text-slate-900">FleetTax Pro AI</h1>
+            <p className="text-slate-500 text-sm">Enter your carrier credentials to access the fleet ledger</p>
+          </div>
+
+          <form onSubmit={handleLogin} className="space-y-4">
+            <div className="space-y-1">
+              <label className="text-[10px] font-bold text-slate-500 uppercase">Email Address</label>
+              <input 
+                type="email" 
+                required 
+                className="w-full border border-slate-200 p-2.5 rounded-lg text-sm focus:ring-2 focus:ring-sky-500 focus:outline-none"
+                placeholder="owner@fleettax.com"
+                value={loginForm.email}
+                onChange={e => setLoginForm({...loginForm, email: e.target.value})}
+              />
+            </div>
+            <div className="space-y-1">
+              <label className="text-[10px] font-bold text-slate-500 uppercase">Password</label>
+              <input 
+                type="password" 
+                required 
+                className="w-full border border-slate-200 p-2.5 rounded-lg text-sm focus:ring-2 focus:ring-sky-500 focus:outline-none"
+                placeholder="••••••••"
+                value={loginForm.password}
+                onChange={e => setLoginForm({...loginForm, password: e.target.value})}
+              />
+            </div>
+            <button 
+              type="submit" 
+              className="w-full bg-slate-900 text-white font-bold py-3 rounded-xl hover:bg-slate-800 transition-all shadow-lg active:scale-[0.98] cursor-pointer"
+            >
+              Sign In to Fleet Ledger
+            </button>
+          </form>
+
+          <div className="bg-slate-50 p-4 rounded-xl space-y-2">
+            <p className="text-[10px] text-slate-400 font-bold uppercase text-center">Demo Credentials (Password: password123)</p>
+            <div className="grid grid-cols-1 gap-2 text-[11px]">
+              <button 
+                type="button"
+                onClick={() => setLoginForm({ email: 'owner@fleettax.com', password: 'password123' })}
+                className="bg-white p-2 rounded border border-slate-100 text-left hover:bg-sky-50 transition-colors"
+              >
+                <strong>Owner:</strong> owner@fleettax.com
+              </button>
+              <button 
+                type="button"
+                onClick={() => setLoginForm({ email: 'dispatcher@fleettax.com', password: 'password123' })}
+                className="bg-white p-2 rounded border border-slate-100 text-left hover:bg-sky-50 transition-colors"
+              >
+                <strong>Dispatcher:</strong> dispatcher@fleettax.com
+              </button>
+              <button 
+                type="button"
+                onClick={() => setLoginForm({ email: 'driver@fleettax.com', password: 'password123' })}
+                className="bg-white p-2 rounded border border-slate-100 text-left hover:bg-sky-50 transition-colors"
+              >
+                <strong>Driver:</strong> driver@fleettax.com
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="flex bg-slate-50 min-h-screen text-slate-900" id="applet-viewport">
@@ -344,6 +457,7 @@ export default function App() {
               vehicles={vehicles} 
               fuelPurchases={fuelPurchases} 
               taxRates={taxRates} 
+              onFuelCardSync={handleFuelCardSync}
             />
           )}
 
@@ -360,14 +474,7 @@ export default function App() {
             <FuelManagement 
               fuelPurchases={fuelPurchases} 
               onUploadReceipt={handleUploadReceipt} 
-            />
-          )}
-
-          {activeTab === 'compliance' && (
-            <ComplianceHub 
-              compliance={fleetCompliance} 
-              drivers={drivers} 
-              vehicles={vehicles} 
+              onFuelCardSync={handleFuelCardSync}
             />
           )}
 

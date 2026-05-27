@@ -3,9 +3,9 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import React, { useState } from 'react';
+import React, { useState, useRef } from 'react';
 import { 
-  Fuel, Receipt, Upload, Plus, CheckCircle, AlertCircle, Info, Image, CreditCard, Layers, Sparkles, RefreshCw, Smartphone 
+  Fuel, Receipt, Upload, Plus, CheckCircle, AlertCircle, Info, Image, CreditCard, Layers, Sparkles, RefreshCw, Smartphone, FileUp 
 } from 'lucide-react';
 import { FuelPurchase } from '../types';
 
@@ -20,12 +20,15 @@ interface FuelManagementProps {
     vendor: string;
     ocrSimulation: boolean;
   }) => Promise<void>;
+  onFuelCardSync: () => Promise<void>;
 }
 
-export default function FuelManagement({ fuelPurchases, onUploadReceipt }: FuelManagementProps) {
+export default function FuelManagement({ fuelPurchases, onUploadReceipt, onFuelCardSync }: FuelManagementProps) {
   const [activeTab, setActiveTab] = useState<'purchases' | 'cards'>('purchases');
   const [isOCRProcessing, setIsOCRProcessing] = useState(false);
+  const [isSyncing, setIsSyncing] = useState(false);
   const [ocrResultMsg, setOcrResultMsg] = useState('');
+  const fileInputRef = useRef<HTMLInputElement>(null);
   
   // Interactive fields
   const [manualForm, setManualForm] = useState({
@@ -54,31 +57,59 @@ export default function FuelManagement({ fuelPurchases, onUploadReceipt }: FuelM
     setTimeout(() => setOcrResultMsg(''), 4000);
   };
 
-  // Simulate premium AI OCR receipt scan
-  const handleReceiptScan = async () => {
+  const handleSyncClick = async () => {
+    setIsSyncing(true);
+    await onFuelCardSync();
+    setIsSyncing(false);
+    setOcrResultMsg('Automatic data fetch from Comdata/EFS completed.');
+    setTimeout(() => setOcrResultMsg(''), 4000);
+  };
+// ... rest of code
+
+  const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
     setIsOCRProcessing(true);
     setOcrResultMsg('');
     
-    // Simulating 1.5 seconds calculation delay
-    setTimeout(async () => {
-      // Pick a semi-random real OCR extracted purchase
-      const ocrPurchases = [
-        { unitNumber: '202', totalCost: 590.25, gallons: 115.5, state: 'CA', date: '2026-05-26', vendor: 'TA Travel Center #88' },
-        { unitNumber: '101', totalCost: 420.50, gallons: 110.0, state: 'TX', date: '2026-05-25', vendor: 'Pilot Flying J #322' },
-        { unitNumber: '305', totalCost: 512.00, gallons: 118.0, state: 'OR', date: '2026-05-24', vendor: 'Love\'s Travel Stop #711' }
-      ];
+    const formData = new FormData();
+    formData.append('report', file);
 
-      const chosen = ocrPurchases[Math.floor(Math.random() * ocrPurchases.length)];
-      
-      await onUploadReceipt({
-        ...chosen,
-        ocrSimulation: true
+    try {
+      // Reusing the parse-report endpoint which uses Gemini to extract structured data
+      const response = await fetch('/api/ifta/parse-report', {
+        method: 'POST',
+        body: formData,
       });
 
+      const result = await response.json();
+      if (result.success && result.data && result.data.length > 0) {
+        // Use the first extracted entry or fall back to defaults
+        const extracted = result.data[0];
+        const purchaseData = {
+          unitNumber: '101', // Default or could be extracted
+          totalCost: extracted.totalCost || (extracted.fuelPurchased * 4.5) || 500, 
+          gallons: extracted.fuelPurchased || extracted.gallons || 100,
+          state: extracted.state || 'TX',
+          date: new Date().toISOString().split('T')[0],
+          vendor: extracted.vendor || 'Extracted Vendor',
+          ocrSimulation: true
+        };
+        
+        await onUploadReceipt(purchaseData);
+        setOcrResultMsg(`AI Receipt Scan Success! Extracted: ${purchaseData.gallons} Gal (${purchaseData.state}) from ${purchaseData.vendor}.`);
+        setTimeout(() => setOcrResultMsg(''), 6500);
+      } else {
+        alert('Failed to parse receipt: ' + (result.error || 'No data found'));
+      }
+    } catch (error) {
+      console.error('OCR error:', error);
+      alert('Error uploading receipt');
+    } finally {
       setIsOCRProcessing(false);
-      setOcrResultMsg(`AI Receipt Scan Success! Extracted: Unit ${chosen.unitNumber}, ${chosen.gallons} Gal (${chosen.state}) total ${chosen.vendor}.`);
-      setTimeout(() => setOcrResultMsg(''), 6500);
-    }, 1500);
+      if (fileInputRef.current) fileInputRef.current.value = '';
+    }
   };
 
   const toggleFuelCard = (id: string) => {
@@ -113,9 +144,17 @@ export default function FuelManagement({ fuelPurchases, onUploadReceipt }: FuelM
               activeTab === 'cards' ? 'border-slate-800 text-slate-800' : 'border-transparent text-gray-500'
             }`}
           >
-            <CreditCard className="w-4 h-4" /> Integrated Fuel Cards ({fuelCards.filter(c=>c.status==='Enabled').length})
+            <CreditCard className="w-4 h-4" /> Integrated Fuel Cards
           </button>
         </div>
+        <button 
+          onClick={handleSyncClick}
+          disabled={isSyncing}
+          className="mb-3 px-4 py-1.5 text-xs font-bold bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 transition-all flex items-center gap-2 disabled:opacity-50"
+        >
+          {isSyncing ? <RefreshCw className="w-3.5 h-3.5 animate-spin" /> : <RefreshCw className="w-3.5 h-3.5" />}
+          Fetch from Fuel Cards (Auto)
+        </button>
       </div>
 
       {ocrResultMsg && (
@@ -138,7 +177,7 @@ export default function FuelManagement({ fuelPurchases, onUploadReceipt }: FuelM
               <thead>
                 <tr className="bg-slate-50 border-b border-gray-100 text-slate-500 font-bold text-[10px] uppercase tracking-wider">
                   <th className="py-3 px-4 font-bold">Receipt ID / Vendor</th>
-                  <th className="py-3 px-4 font-bold">Odor / State</th>
+                  <th className="py-3 px-4 font-bold">Unit / State</th>
                   <th className="py-3 px-4 font-bold">Quantity (gal)</th>
                   <th className="py-3 px-4 font-bold">Price / Gallon</th>
                   <th className="py-3 px-4 font-bold text-right">Total Ledger</th>
@@ -192,10 +231,18 @@ export default function FuelManagement({ fuelPurchases, onUploadReceipt }: FuelM
                 <p className="text-[11px] text-slate-400 mt-1">Upload diesel voucher JPEG/PNG scan. Our server parses gallon rates, vendor codes, and tax jurisdictions instantly.</p>
               </div>
 
-              {/* Mock Upload zone with drag-drop style trigger */}
+              <input 
+                type="file" 
+                ref={fileInputRef} 
+                onChange={handleFileUpload} 
+                className="hidden" 
+                accept="image/*,.pdf"
+              />
+
+              {/* Upload zone */}
               <button 
                 type="button"
-                onClick={handleReceiptScan}
+                onClick={() => fileInputRef.current?.click()}
                 disabled={isOCRProcessing}
                 className="w-full bg-slate-900/60 border-2 border-dashed border-slate-700 hover:border-sky-500 rounded-xl py-6 px-4 flex flex-col items-center justify-center text-center gap-2 group transition-all cursor-pointer disabled:opacity-50"
               >

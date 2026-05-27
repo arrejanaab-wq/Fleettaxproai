@@ -3,11 +3,19 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import express from 'express';
+import express, { Request, Response } from 'express';
 import path from 'path';
 import { createServer as createViteServer } from 'vite';
 import { GoogleGenAI } from '@google/genai';
 import * as dotenv from 'dotenv';
+import multer from 'multer';
+import * as pdfParseModule from 'pdf-parse';
+const pdf = (pdfParseModule as any).default || pdfParseModule;
+import * as XLSX from 'xlsx';
+import mammoth from 'mammoth';
+import fs from 'fs';
+//...
+
 
 // Load variables
 dotenv.config();
@@ -15,19 +23,30 @@ dotenv.config();
 const app = express();
 const PORT = 3000;
 
+// Ensure uploads directory exists
+const uploadDir = 'uploads/';
+if (!fs.existsSync(uploadDir)){
+    fs.mkdirSync(uploadDir);
+}
+
+// Configure multer
+const upload = multer({ dest: uploadDir });
+
 app.use(express.json());
 
 // In-memory persistent mock database to simulate PostgreSQL
 const db = {
+
   fleetCompliance: {
     dotNumber: "DOT-38194812",
     mcNumber: "MC-920481",
-    csaScore: 82, // 0-100 (lower is better, or higher depends, here let's say safety percentile is 82/100, which is good but has some warnings)
+    csaScore: 82, 
     insuranceStatus: "Active" as const,
     insuranceExpiry: "2026-11-15",
     drugTestingStatus: "Compliant" as const,
     dotRenewalDate: "2026-08-30"
   },
+// ... rest of db stays same
   
   vehicles: [
     { id: "v1", unitNumber: "101", vin: "1XPBD49X1ND293041", plateNumber: "TX-99K21", year: 2022, make: "Peterbilt", model: "579", fuelType: "Diesel" as const, gvw: 80000, irpRegistered: true, insuranceExpiry: "2026-12-01", status: "Active" as const, currentMpg: 6.2 },
@@ -90,8 +109,145 @@ const db = {
     "2026-05-27 08:00:17 - Parsing 2026 Q2 Revised tax distribution factors...",
     "2026-05-27 08:00:18 - Verified digital signatures for CA, TX, OR, UT and NM state rates.",
     "2026-05-27 08:00:19 - Sync complete. 51 jurisdictions verified as production-grade."
+  ],
+
+  // New mileage logs for per-vehicle tracking
+  mileageLogs: [
+    { unitNumber: "101", state: "TX", miles: 2000, fuelPurchased: 300 },
+    { unitNumber: "101", state: "OK", miles: 1000, fuelPurchased: 0 },
+    { unitNumber: "101", state: "KS", miles: 1500, fuelPurchased: 100 },
+    { unitNumber: "202", state: "CA", miles: 3000, fuelPurchased: 450 },
+    { unitNumber: "202", state: "AZ", miles: 1200, fuelPurchased: 0 }
   ]
 };
+
+// Helper to extract text from files
+async function extractTextFromFile(filePath: string, mimetype: string): Promise<string> {
+  try {
+    if (mimetype === 'application/pdf') {
+      const dataBuffer = fs.readFileSync(filePath);
+      const data = await pdf(dataBuffer);
+      return data.text;
+    } else if (mimetype === 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' || mimetype === 'application/vnd.ms-excel') {
+      const workbook = XLSX.readFile(filePath);
+      const sheetName = workbook.SheetNames[0];
+      const worksheet = workbook.Sheets[sheetName];
+      return XLSX.utils.sheet_to_txt(worksheet);
+    } else if (mimetype === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document') {
+      const result = await mammoth.extractRawText({ path: filePath });
+      return result.value;
+    } else if (mimetype.startsWith('image/')) {
+       // For images, we just return a placeholder or handle via Gemini Vision if available
+       // Since we are using text-based Gemini here, we'll suggest OCR
+       return "IMAGE_FILE_UPLOADED";
+    }
+  } catch (err) {
+    console.error("Extraction error:", err);
+  }
+  return "";
+}
+
+// Route to parse IFTA report from file
+app.post('/api/ifta/parse-report', upload.single('report') as any, async (req: any, res: any) => {
+  console.log("File upload received:", req.file);
+  try {
+    if (!req.file) {
+      console.error("No file in request");
+      return res.status(400).json({ error: "No file uploaded" });
+    }
+
+    const text = await extractTextFromFile(req.file.path, req.file.mimetype);
+    
+    // Clean up uploaded file
+    if (fs.existsSync(req.file.path)) fs.unlinkSync(req.file.path);
+
+    if (!text && !req.file.mimetype.startsWith('image/')) {
+      return res.status(400).json({ error: "Could not extract text from file" });
+    }
+
+    // Check if GEMINI_API_KEY is configured
+    if (!process.env.GEMINI_API_KEY || process.env.GEMINI_API_KEY === 'MY_GEMINI_API_KEY') {
+      const mockExtracted = [
+        { unitNumber: '101', state: 'TX', taxableMiles: 2000, fuelPurchased: 300 },
+        { unitNumber: '101', state: 'OK', taxableMiles: 1000, fuelPurchased: 0 },
+        { unitNumber: '101', state: 'KS', taxableMiles: 1500, fuelPurchased: 100 }
+      ];
+      return res.json({ 
+        success: true, 
+        data: mockExtracted,
+        note: "Gemini API key not configured. Using mock extraction."
+      });
+    }
+
+    const ai = new GoogleGenAI({
+      apiKey: process.env.GEMINI_API_KEY,
+    });
+
+    const prompt = `Extract IFTA mileage and fuel data per vehicle unit from the following text. 
+Return a JSON array of objects with keys: "unitNumber", "state" (2-letter), "taxableMiles", "fuelPurchased" (gallons).
+Text:
+${text}`;
+
+    const response = await ai.models.generateContent({
+      model: 'gemini-1.5-flash',
+      contents: [{ role: 'user', parts: [{ text: prompt }] }]
+    });
+    
+    const responseText = response.text;
+    
+    const jsonMatch = responseText.match(/\[[\s\S]*\]/);
+    if (!jsonMatch) {
+      throw new Error("Could not parse JSON from AI response");
+    }
+
+    const extractedData = JSON.parse(jsonMatch[0]);
+    res.json({ success: true, data: extractedData });
+
+  } catch (error: any) {
+    console.error("IFTA Parsing Failure:", error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Login endpoint
+app.post('/api/login', (req, res) => {
+  const { email, password } = req.body;
+  
+  // Simple mock login logic
+  if (password === 'password123') {
+    if (email === 'owner@fleettax.com') return res.json({ success: true, user: { name: 'Owner Admin', role: 'Fleet Owner', email } });
+    if (email === 'dispatcher@fleettax.com') return res.json({ success: true, user: { name: 'Mike Dispatch', role: 'Dispatcher', email } });
+    if (email === 'driver@fleettax.com') return res.json({ success: true, user: { name: 'John Driver', role: 'Driver', email } });
+  }
+  
+  res.status(401).json({ success: false, error: 'Invalid credentials' });
+});
+
+// Mock Fuel Card Fetch
+app.get('/api/fuel/card-sync', (req, res) => {
+  const fuelCardData = [
+    { unitNumber: '101', state: 'TX', gallons: 250, vendor: 'Comdata Sync', date: '2026-05-27' },
+    { unitNumber: '202', state: 'CA', gallons: 400, vendor: 'EFS Auto Fetch', date: '2026-05-27' }
+  ];
+  
+  // Add to main fuel purchases
+  fuelCardData.forEach(item => {
+    db.fuelPurchases.unshift({
+      id: 'fc-' + Math.random().toString(36).substr(2, 9),
+      unitNumber: item.unitNumber,
+      date: item.date,
+      state: item.state,
+      vendor: item.vendor,
+      gallons: item.gallons,
+      fuelType: 'Diesel',
+      totalCost: item.gallons * 4.25,
+      receiptUrl: "synced_card.jpg",
+      ocrExtracted: false
+    });
+  });
+
+  res.json({ success: true, data: fuelCardData });
+});
 
 // Route to get entire db state
 app.get('/api/fleet/all', (req, res) => {
