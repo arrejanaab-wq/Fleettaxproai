@@ -14,23 +14,15 @@ const pdf = (pdfParseModule as any).default || pdfParseModule;
 import * as XLSX from 'xlsx';
 import mammoth from 'mammoth';
 import fs from 'fs';
-//...
-
 
 // Load variables
 dotenv.config();
 
 const app = express();
-const PORT = 3000;
+const PORT = Number(process.env.PORT) || 3000;
 
-// Ensure uploads directory exists
-const uploadDir = 'uploads/';
-if (!fs.existsSync(uploadDir)){
-    fs.mkdirSync(uploadDir);
-}
-
-// Configure multer
-const upload = multer({ dest: uploadDir });
+// Configure multer to use memory storage for Vercel compatibility
+const upload = multer({ storage: multer.memoryStorage() });
 
 app.use(express.json());
 
@@ -122,19 +114,18 @@ const db = {
 };
 
 // Helper to extract text from files
-async function extractTextFromFile(filePath: string, mimetype: string): Promise<string> {
+async function extractTextFromFile(fileBuffer: Buffer, mimetype: string): Promise<string> {
   try {
     if (mimetype === 'application/pdf') {
-      const dataBuffer = fs.readFileSync(filePath);
-      const data = await pdf(dataBuffer);
+      const data = await pdf(fileBuffer);
       return data.text;
     } else if (mimetype === 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' || mimetype === 'application/vnd.ms-excel') {
-      const workbook = XLSX.readFile(filePath);
+      const workbook = XLSX.read(fileBuffer, { type: 'buffer' });
       const sheetName = workbook.SheetNames[0];
       const worksheet = workbook.Sheets[sheetName];
       return XLSX.utils.sheet_to_txt(worksheet);
     } else if (mimetype === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document') {
-      const result = await mammoth.extractRawText({ path: filePath });
+      const result = await mammoth.extractRawText({ buffer: fileBuffer });
       return result.value;
     } else if (mimetype.startsWith('image/')) {
        // For images, we just return a placeholder or handle via Gemini Vision if available
@@ -151,19 +142,17 @@ async function extractTextFromFile(filePath: string, mimetype: string): Promise<
 app.post('/api/ifta/parse-report', upload.single('report') as any, async (req: any, res: any) => {
   console.log("File upload received:", req.file);
   try {
-    if (!req.file) {
+    if (!req.file || !req.file.buffer) {
       console.error("No file in request");
       return res.status(400).json({ error: "No file uploaded" });
     }
 
-    const text = await extractTextFromFile(req.file.path, req.file.mimetype);
-    
-    // Clean up uploaded file
-    if (fs.existsSync(req.file.path)) fs.unlinkSync(req.file.path);
+    const text = await extractTextFromFile(req.file.buffer, req.file.mimetype);
 
     if (!text && !req.file.mimetype.startsWith('image/')) {
       return res.status(400).json({ error: "Could not extract text from file" });
     }
+
 
     // Check if GEMINI_API_KEY is configured
     if (!process.env.GEMINI_API_KEY || process.env.GEMINI_API_KEY === 'MY_GEMINI_API_KEY') {
@@ -502,26 +491,30 @@ You can ask me questions such as:
 }
 
 // Vite Server Integration
-async function main() {
-  if (process.env.NODE_ENV !== 'production') {
-    const vite = await createViteServer({
-      server: { middlewareMode: true },
-      appType: 'spa',
-    });
-    app.use(vite.middlewares);
-  } else {
-    const distPath = path.join(process.cwd(), 'dist');
-    app.use(express.static(distPath));
-    app.get('*', (req, res) => {
-      res.sendFile(path.join(distPath, 'index.html'));
+if (!process.env.VERCEL) {
+  async function main() {
+    if (process.env.NODE_ENV !== 'production') {
+      const vite = await createViteServer({
+        server: { middlewareMode: true },
+        appType: 'spa',
+      });
+      app.use(vite.middlewares);
+    } else {
+      const distPath = path.join(process.cwd(), 'dist');
+      app.use(express.static(distPath));
+      app.get('*', (req, res) => {
+        res.sendFile(path.join(distPath, 'index.html'));
+      });
+    }
+
+    app.listen(PORT, '0.0.0.0', () => {
+      console.log(`FleetTax Pro AI fullstack server initialized on http://0.0.0.0:${PORT}`);
     });
   }
 
-  app.listen(PORT, '0.0.0.0', () => {
-    console.log(`FleetTax Pro AI fullstack server initialized on http://0.0.0.0:${PORT}`);
+  main().catch((err) => {
+    console.error("Express initialization failed", err);
   });
 }
 
-main().catch((err) => {
-  console.error("Express initialization failed", err);
-});
+export default app;
