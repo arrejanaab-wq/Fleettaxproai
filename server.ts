@@ -5,7 +5,6 @@
 
 import express, { Request, Response } from 'express';
 import path from 'path';
-import { createServer as createViteServer } from 'vite';
 import { GoogleGenAI } from '@google/genai';
 import * as dotenv from 'dotenv';
 import multer from 'multer';
@@ -494,7 +493,8 @@ You can ask me questions such as:
 if (!process.env.VERCEL) {
   async function main() {
     if (process.env.NODE_ENV !== 'production') {
-      const vite = await createViteServer({
+      const { createServer } = await import('vite');
+      const vite = await createServer({
         server: { middlewareMode: true },
         appType: 'spa',
       });
