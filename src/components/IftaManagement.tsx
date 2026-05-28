@@ -3,9 +3,9 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import { 
-  Scale, Calculator, CheckCircle2, ChevronRight, FileDown, AlertCircle, Info, Landmark, Edit, RefreshCw, Upload, FileUp, Trash2, Plus, Truck
+  Scale, Calculator, CheckCircle2, ChevronRight, FileDown, AlertCircle, Info, Landmark, Edit, RefreshCw, Upload, FileUp, Trash2, Plus, Truck, Save
 } from 'lucide-react';
 import { Vehicle, FuelPurchase, StateMileage, TaxRate } from '../types';
 
@@ -17,25 +17,42 @@ interface IftaManagementProps {
   vehicles: Vehicle[];
   fuelPurchases: FuelPurchase[];
   taxRates: TaxRate[];
+  mileageLogs: { unitNumber: string; state: string; miles: number; fuelPurchased: number }[];
+  onUpdateMileageLogs: (logs: any[]) => Promise<void>;
   onFuelCardSync: () => Promise<void>;
 }
 
-export default function IftaManagement({ vehicles, fuelPurchases, taxRates, onFuelCardSync }: IftaManagementProps) {
+export default function IftaManagement({ 
+  vehicles, 
+  fuelPurchases, 
+  taxRates, 
+  mileageLogs,
+  onUpdateMileageLogs,
+  onFuelCardSync 
+}: IftaManagementProps) {
   const [activeQuarter, setActiveQuarter] = useState<'Q2-2026' | 'Q1-2026'>('Q2-2026');
   const [successMsg, setSuccessMsg] = useState('');
   const [isUploading, setIsUploading] = useState(false);
   const [isSyncing, setIsSyncing] = useState(false);
+  const [isSaving, setIsSaving] = useState(false);
   const [selectedUnit, setSelectedUnit] = useState<string>('All Units');
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  // 1. State for mileage data (initialized with some defaults per unit)
-  const [stateMileages, setStateMileages] = useState<ExtendedStateMileage[]>([
-    { unitNumber: '101', state: 'TX', taxableMiles: 2000, tollMiles: 0, nonTollMiles: 2000, fuelPurchased: 300 },
-    { unitNumber: '101', state: 'OK', taxableMiles: 1000, tollMiles: 0, nonTollMiles: 1000, fuelPurchased: 0 },
-    { unitNumber: '101', state: 'KS', taxableMiles: 1500, tollMiles: 0, nonTollMiles: 1500, fuelPurchased: 100 },
-    { unitNumber: '202', state: 'CA', taxableMiles: 3000, tollMiles: 0, nonTollMiles: 3000, fuelPurchased: 450 },
-    { unitNumber: '202', state: 'AZ', taxableMiles: 1200, tollMiles: 0, nonTollMiles: 1200, fuelPurchased: 0 }
-  ]);
+  // 1. State for mileage data (initialized from props)
+  const [stateMileages, setStateMileages] = useState<ExtendedStateMileage[]>([]);
+
+  useEffect(() => {
+    if (mileageLogs && mileageLogs.length > 0) {
+      setStateMileages(mileageLogs.map(log => ({
+        unitNumber: log.unitNumber,
+        state: log.state,
+        taxableMiles: log.miles,
+        tollMiles: 0,
+        nonTollMiles: log.miles,
+        fuelPurchased: log.fuelPurchased
+      })));
+    }
+  }, [mileageLogs]);
 
   const handleFuelSync = async () => {
     setIsSyncing(true);
@@ -44,7 +61,20 @@ export default function IftaManagement({ vehicles, fuelPurchases, taxRates, onFu
     setSuccessMsg('Fuel card data synchronized for all units.');
     setTimeout(() => setSuccessMsg(''), 5000);
   };
-// ... rest of code
+
+  const handleSaveMatrix = async () => {
+    setIsSaving(true);
+    const logsToSave = stateMileages.map(m => ({
+      unitNumber: m.unitNumber,
+      state: m.state,
+      miles: Number(m.taxableMiles),
+      fuelPurchased: Number(m.fuelPurchased)
+    }));
+    await onUpdateMileageLogs(logsToSave);
+    setIsSaving(false);
+    setSuccessMsg('IFTA mileage matrix saved to ledger.');
+    setTimeout(() => setSuccessMsg(''), 5000);
+  };
 
   // Filter logic
   const filteredData = selectedUnit === 'All Units' 
@@ -119,7 +149,6 @@ export default function IftaManagement({ vehicles, fuelPurchases, taxRates, onFu
 
   const updateStateValue = (index: number, field: keyof ExtendedStateMileage, value: string) => {
     const newList = [...stateMileages];
-    // Find the actual object in the original array
     const targetObj = filteredData[index];
     const actualIndex = stateMileages.indexOf(targetObj);
 
@@ -259,12 +288,22 @@ export default function IftaManagement({ vehicles, fuelPurchases, taxRates, onFu
           <strong className="text-xs text-slate-800 uppercase tracking-wider font-extrabold font-mono">
             {selectedUnit === 'All Units' ? 'Consolidated Fleet Matrix' : `State Liability for Unit ${selectedUnit}`}
           </strong>
-          <button 
-            onClick={addRow}
-            className="text-[10px] bg-slate-900 text-white px-2 py-1 rounded flex items-center gap-1 font-bold hover:bg-slate-800"
-          >
-            <Plus className="w-3 h-3" /> Add State Entry
-          </button>
+          <div className="flex gap-2">
+            <button 
+              onClick={addRow}
+              className="text-[10px] bg-slate-100 text-slate-700 px-2 py-1 rounded flex items-center gap-1 font-bold hover:bg-slate-200 transition-all"
+            >
+              <Plus className="w-3 h-3" /> Add State Entry
+            </button>
+            <button 
+              onClick={handleSaveMatrix}
+              disabled={isSaving}
+              className="text-[10px] bg-slate-900 text-white px-2 py-1 rounded flex items-center gap-1 font-bold hover:bg-slate-800 transition-all disabled:opacity-50"
+            >
+              {isSaving ? <RefreshCw className="w-3 h-3 animate-spin" /> : <Save className="w-3 h-3" />} 
+              Save Matrix
+            </button>
+          </div>
         </div>
 
         <div className="overflow-x-auto">

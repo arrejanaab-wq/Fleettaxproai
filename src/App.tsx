@@ -54,6 +54,7 @@ export default function App() {
   const [auditLogs, setAuditLogs] = useState<{ timestamp: string; user: string; action: string; status: string }[]>([]);
   const [syncStatus, setSyncStatus] = useState("Local Offline Mode");
   const [syncLog, setSyncLog] = useState<string[]>([]);
+  const [mileageLogs, setMileageLogs] = useState<{ unitNumber: string; state: string; miles: number; fuelPurchased: number }[]>([]);
   const [chatHistory, setChatHistory] = useState<ChatMessage[]>([]);
 
   // Toast notification state
@@ -80,6 +81,7 @@ export default function App() {
         setAuditLogs(data.auditLogs);
         setSyncStatus(data.syncStatus);
         setSyncLog(data.syncLog);
+        setMileageLogs(data.mileageLogs || []);
       }
     } catch (e) {
       console.warn("Express endpoint missing, applying dynamic offline fallback models.", e);
@@ -107,6 +109,36 @@ export default function App() {
     }
   };
 
+  const handleEditVehicle = async (id: string, vehicle: Partial<Vehicle>) => {
+    try {
+      const res = await fetch(`/api/vehicles/${id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(vehicle)
+      });
+      if (res.ok) {
+        triggerToast(`Vehicle updated successfully.`);
+        await refreshAllData();
+      }
+    } catch {
+      triggerToast("Offline simulation saving.");
+    }
+  };
+
+  const handleDeleteVehicle = async (id: string) => {
+    try {
+      const res = await fetch(`/api/vehicles/${id}`, {
+        method: 'DELETE'
+      });
+      if (res.ok) {
+        triggerToast(`Vehicle removed successfully.`);
+        await refreshAllData();
+      }
+    } catch {
+      triggerToast("Offline simulation saving.");
+    }
+  };
+
   const handleAddDriver = async (driver: Partial<Driver>) => {
     try {
       const res = await fetch('/api/drivers/add', {
@@ -116,6 +148,36 @@ export default function App() {
       });
       if (res.ok) {
         triggerToast(`Operator: ${driver.name} enrolled successfully.`);
+        await refreshAllData();
+      }
+    } catch {
+      triggerToast("Offline simulation saving.");
+    }
+  };
+
+  const handleEditDriver = async (id: string, driver: Partial<Driver>) => {
+    try {
+      const res = await fetch(`/api/drivers/${id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(driver)
+      });
+      if (res.ok) {
+        triggerToast(`Driver updated successfully.`);
+        await refreshAllData();
+      }
+    } catch {
+      triggerToast("Offline simulation saving.");
+    }
+  };
+
+  const handleDeleteDriver = async (id: string) => {
+    try {
+      const res = await fetch(`/api/drivers/${id}`, {
+        method: 'DELETE'
+      });
+      if (res.ok) {
+        triggerToast(`Driver removed successfully.`);
         await refreshAllData();
       }
     } catch {
@@ -172,6 +234,22 @@ export default function App() {
       }
     } catch {
       triggerToast("Synch matrix evaluated.");
+    }
+  };
+
+  const handleUpdateMileageLogs = async (logs: any[]) => {
+    try {
+      const res = await fetch('/api/ifta/mileage/update', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ mileageLogs: logs })
+      });
+      if (res.ok) {
+        triggerToast("Mileage distribution updated.");
+        await refreshAllData();
+      }
+    } catch {
+      triggerToast("Local update simulated.");
     }
   };
 
@@ -452,7 +530,11 @@ export default function App() {
               vehicles={vehicles} 
               drivers={drivers} 
               onAddVehicle={handleAddVehicle} 
+              onEditVehicle={handleEditVehicle}
+              onDeleteVehicle={handleDeleteVehicle}
               onAddDriver={handleAddDriver} 
+              onEditDriver={handleEditDriver}
+              onDeleteDriver={handleDeleteDriver}
               onUpdateDriverCompliance={handleUpdateDriverCompliance} 
             />
           )}
@@ -466,6 +548,8 @@ export default function App() {
               vehicles={vehicles} 
               fuelPurchases={fuelPurchases} 
               taxRates={taxRates} 
+              mileageLogs={mileageLogs}
+              onUpdateMileageLogs={handleUpdateMileageLogs}
               onFuelCardSync={handleFuelCardSync}
             />
           )}

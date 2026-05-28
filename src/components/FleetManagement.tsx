@@ -14,7 +14,11 @@ interface FleetManagementProps {
   vehicles: Vehicle[];
   drivers: Driver[];
   onAddVehicle: (v: Partial<Vehicle>) => Promise<void>;
+  onEditVehicle: (id: string, v: Partial<Vehicle>) => Promise<void>;
+  onDeleteVehicle: (id: string) => Promise<void>;
   onAddDriver: (d: Partial<Driver>) => Promise<void>;
+  onEditDriver: (id: string, d: Partial<Driver>) => Promise<void>;
+  onDeleteDriver: (id: string) => Promise<void>;
   onUpdateDriverCompliance: (driverId: string, field: string, value: string | boolean) => Promise<void>;
 }
 
@@ -22,12 +26,20 @@ export default function FleetManagement({
   vehicles, 
   drivers, 
   onAddVehicle, 
+  onEditVehicle,
+  onDeleteVehicle,
   onAddDriver, 
+  onEditDriver,
+  onDeleteDriver,
   onUpdateDriverCompliance 
 }: FleetManagementProps) {
   const [activeSubTab, setActiveSubTab] = useState<'vehicles' | 'drivers'>('vehicles');
   const [isVehicleModalOpen, setIsVehicleModalOpen] = useState(false);
+  const [isEditModalOpen, setIsEditModalOpen] = useState(false);
   const [isDriverModalOpen, setIsDriverModalOpen] = useState(false);
+  const [isEditDriverModalOpen, setIsEditDriverModalOpen] = useState(false);
+  const [editingVehicle, setEditingVehicle] = useState<Vehicle | null>(null);
+  const [editingDriver, setEditingDriver] = useState<Driver | null>(null);
 
   // States for interactive new inputs
   const [newVehicle, setNewVehicle] = useState({
@@ -52,6 +64,26 @@ export default function FleetManagement({
     });
   };
 
+  const handleEditSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (editingVehicle) {
+      await onEditVehicle(editingVehicle.id, editingVehicle);
+      setIsEditModalOpen(false);
+      setEditingVehicle(null);
+    }
+  };
+
+  const handleDeleteClick = async (id: string, unit: string) => {
+    if (window.confirm(`Are you sure you want to remove Vehicle Unit ${unit}? This will purge all associated logs.`)) {
+      await onDeleteVehicle(id);
+    }
+  };
+
+  const openEditModal = (v: Vehicle) => {
+    setEditingVehicle(v);
+    setIsEditModalOpen(true);
+  };
+
   const handleDriverSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     await onAddDriver(newDriver);
@@ -61,6 +93,26 @@ export default function FleetManagement({
       name: '', cdlNumber: '', state: 'TX', expirationDate: '2027-12-31',
       medicalCertExpiry: '2026-12-31', phone: '', email: '', drugTestCompliant: true
     });
+  };
+
+  const handleEditDriverSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (editingDriver) {
+      await onEditDriver(editingDriver.id, editingDriver);
+      setIsEditDriverModalOpen(false);
+      setEditingDriver(null);
+    }
+  };
+
+  const handleDeleteDriverClick = async (id: string, name: string) => {
+    if (window.confirm(`Are you sure you want to remove Driver ${name}? This will purge all associated records.`)) {
+      await onDeleteDriver(id);
+    }
+  };
+
+  const openEditDriverModal = (d: Driver) => {
+    setEditingDriver(d);
+    setIsEditDriverModalOpen(true);
   };
 
   return (
@@ -120,7 +172,8 @@ export default function FleetManagement({
                 <th className="py-3.5 px-4 font-bold">GVW Rating</th>
                 <th className="py-3.5 px-4 font-bold">IRP Registered</th>
                 <th className="py-3.5 px-4 font-bold">Insurance Expiry</th>
-                <th className="py-3.5 px-4 font-bold text-right">Status</th>
+                <th className="py-3.5 px-4 font-bold">Status</th>
+                <th className="py-3.5 px-4 text-right font-bold">Actions</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-50 text-xs text-slate-900">
@@ -154,13 +207,31 @@ export default function FleetManagement({
                       {v.insuranceExpiry}
                     </span>
                   </td>
-                  <td className="py-3.5 px-4 text-right">
+                  <td className="py-3.5 px-4">
                     <span className={`inline-block px-2.5 py-0.5 rounded-md text-[10px] font-extrabold uppercase tracking-wide ${
                       v.status === 'Active' ? 'bg-emerald-50 text-emerald-700' : 
                       v.status === 'Maintenance' ? 'bg-amber-100 text-amber-800' : 'bg-slate-100 text-slate-500'
                     }`}>
                       {v.status}
                     </span>
+                  </td>
+                  <td className="py-3.5 px-4 text-right">
+                    <div className="flex justify-end gap-2">
+                      <button 
+                        onClick={() => openEditModal(v)}
+                        className="p-1.5 text-slate-400 hover:text-sky-600 hover:bg-sky-50 rounded transition-all"
+                        title="Edit Vehicle"
+                      >
+                        <Edit className="w-4 h-4" />
+                      </button>
+                      <button 
+                        onClick={() => handleDeleteClick(v.id, v.unitNumber)}
+                        className="p-1.5 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded transition-all"
+                        title="Delete Vehicle"
+                      >
+                        <Trash2 className="w-4 h-4" />
+                      </button>
+                    </div>
                   </td>
                 </tr>
               ))}
@@ -185,13 +256,31 @@ export default function FleetManagement({
                       </p>
                     </div>
                   </div>
-                  <span className={`text-[10px] uppercase font-extrabold tracking-wide px-2 py-0.5 rounded-md ${
-                    d.status === 'On Trip' ? 'bg-amber-50 text-amber-700 border border-amber-200' :
-                    d.status === 'Ready' ? 'bg-emerald-50 text-emerald-700 border border-emerald-200' :
-                    'bg-slate-50 text-slate-500 border border-slate-200'
-                  }`}>
-                    {d.status}
-                  </span>
+                  <div className="flex flex-col items-end gap-2">
+                    <span className={`text-[10px] uppercase font-extrabold tracking-wide px-2 py-0.5 rounded-md ${
+                      d.status === 'On Trip' ? 'bg-amber-50 text-amber-700 border border-amber-200' :
+                      d.status === 'Ready' ? 'bg-emerald-50 text-emerald-700 border border-emerald-200' :
+                      'bg-slate-50 text-slate-500 border border-slate-200'
+                    }`}>
+                      {d.status}
+                    </span>
+                    <div className="flex gap-1">
+                      <button 
+                        onClick={() => openEditDriverModal(d)}
+                        className="p-1 text-slate-400 hover:text-sky-600 hover:bg-sky-50 rounded transition-all"
+                        title="Edit Driver"
+                      >
+                        <Edit className="w-3.5 h-3.5" />
+                      </button>
+                      <button 
+                        onClick={() => handleDeleteDriverClick(d.id, d.name)}
+                        className="p-1 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded transition-all"
+                        title="Delete Driver"
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
+                  </div>
                 </div>
 
                 {/* CDL and compliance metadata */}
@@ -337,6 +426,81 @@ export default function FleetManagement({
         </div>
       )}
 
+      {/* EDIT VEHICLE MODAL */}
+      {isEditModalOpen && editingVehicle && (
+        <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-xs flex items-center justify-center p-4 z-50">
+          <div className="bg-white rounded-xl shadow-xl w-full max-w-lg overflow-hidden border border-gray-100 animate-in fade-in zoom-in duration-200">
+            <div className="flex items-center justify-between px-6 py-4 border-b border-gray-100">
+              <h3 className="font-bold text-slate-800 text-sm">Update Vehicle Unit {editingVehicle.unitNumber}</h3>
+              <button onClick={() => setIsEditModalOpen(false)} className="text-gray-400 hover:text-slate-600"><X className="w-5 h-5" /></button>
+            </div>
+            <form onSubmit={handleEditSubmit} className="p-6 space-y-4">
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="text-[10px] text-gray-500 font-bold uppercase block mb-1">Unit Number</label>
+                  <input required type="text" className="w-full text-xs border border-gray-200 p-2 rounded-lg" value={editingVehicle.unitNumber} onChange={e=>setEditingVehicle({...editingVehicle, unitNumber: e.target.value})} />
+                </div>
+                <div>
+                  <label className="text-[10px] text-gray-500 font-bold uppercase block mb-1">Plate Number</label>
+                  <input required type="text" className="w-full text-xs border border-gray-200 p-2 rounded-lg" value={editingVehicle.plateNumber} onChange={e=>setEditingVehicle({...editingVehicle, plateNumber: e.target.value})} />
+                </div>
+              </div>
+
+              <div>
+                <label className="text-[10px] text-gray-500 font-bold uppercase block mb-1">VIN Number</label>
+                <input required type="text" className="w-full text-xs border border-gray-200 p-2 rounded-lg font-mono" value={editingVehicle.vin} onChange={e=>setEditingVehicle({...editingVehicle, vin: e.target.value})} />
+              </div>
+
+              <div className="grid grid-cols-3 gap-3">
+                <div>
+                  <label className="text-[10px] text-gray-400 font-bold uppercase block mb-1">Year</label>
+                  <input required type="number" className="w-full text-xs border border-gray-200 p-2 rounded-lg" value={editingVehicle.year} onChange={e=>setEditingVehicle({...editingVehicle, year: Number(e.target.value)})} />
+                </div>
+                <div>
+                  <label className="text-[10px] text-gray-400 font-bold uppercase block mb-1">Make</label>
+                  <input required type="text" className="w-full text-xs border border-gray-200 p-2 rounded-lg" value={editingVehicle.make} onChange={e=>setEditingVehicle({...editingVehicle, make: e.target.value})} />
+                </div>
+                <div>
+                  <label className="text-[10px] text-gray-400 font-bold uppercase block mb-1">Model</label>
+                  <input required type="text" className="w-full text-xs border border-gray-200 p-2 rounded-lg" value={editingVehicle.model} onChange={e=>setEditingVehicle({...editingVehicle, model: e.target.value})} />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="text-[10px] text-gray-500 font-bold uppercase block mb-1">Fuel Type</label>
+                  <select className="w-full text-xs border border-gray-200 p-2 rounded-lg" value={editingVehicle.fuelType} onChange={e=>setEditingVehicle({...editingVehicle, fuelType: e.target.value as any})}>
+                    <option value="Diesel">Diesel</option>
+                    <option value="Gasoline">Gasoline</option>
+                    <option value="CNG">CNG</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="text-[10px] text-gray-500 font-bold uppercase block mb-1">Status</label>
+                  <select className="w-full text-xs border border-gray-200 p-2 rounded-lg" value={editingVehicle.status} onChange={e=>setEditingVehicle({...editingVehicle, status: e.target.value as any})}>
+                    <option value="Active">Active</option>
+                    <option value="Maintenance">Maintenance</option>
+                    <option value="Inactive">Inactive</option>
+                  </select>
+                </div>
+              </div>
+
+              <div className="flex gap-4 p-3 bg-slate-50 border border-slate-100 rounded-lg">
+                <label className="flex items-center gap-2 text-xs text-slate-700 font-semibold cursor-pointer">
+                  <input type="checkbox" checked={editingVehicle.irpRegistered} onChange={e=>setEditingVehicle({...editingVehicle, irpRegistered: e.target.checked})} className="rounded text-slate-800" />
+                  Apportioned IRP Registered Vehicle
+                </label>
+              </div>
+
+              <div className="flex justify-end gap-3 pt-4 border-t border-gray-100">
+                <button type="button" onClick={() => setIsEditModalOpen(false)} className="px-4 py-2 border border-gray-200 text-xs text-slate-600 rounded-lg hover:bg-slate-50 font-bold">Cancel</button>
+                <button type="submit" className="px-4 py-2 bg-slate-900 hover:bg-slate-800 text-xs text-white rounded-lg font-bold">Update Vehicle</button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
       {/* REGISTER DRIVER MODAL */}
       {isDriverModalOpen && (
         <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-xs flex items-center justify-center p-4 z-50">
@@ -387,6 +551,74 @@ export default function FleetManagement({
               <div className="flex justify-end gap-3 pt-4 border-t border-gray-100">
                 <button type="button" onClick={() => setIsDriverModalOpen(false)} className="px-4 py-2 border border-gray-200 text-xs text-slate-600 rounded-lg hover:bg-slate-50 font-bold">Cancel</button>
                 <button type="submit" className="px-4 py-2 bg-slate-900 hover:bg-slate-800 text-xs text-white rounded-lg font-bold">Enrol CDL Operator</button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* EDIT DRIVER MODAL */}
+      {isEditDriverModalOpen && editingDriver && (
+        <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-xs flex items-center justify-center p-4 z-50">
+          <div className="bg-white rounded-xl shadow-xl w-full max-w-lg overflow-hidden border border-gray-100 animate-in fade-in zoom-in duration-200">
+            <div className="flex items-center justify-between px-6 py-4 border-b border-gray-100">
+              <h3 className="font-bold text-slate-800 text-sm">Update Driver: {editingDriver.name}</h3>
+              <button onClick={() => setIsEditDriverModalOpen(false)} className="text-gray-400 hover:text-slate-600"><X className="w-5 h-5" /></button>
+            </div>
+            <form onSubmit={handleEditDriverSubmit} className="p-6 space-y-4">
+              <div>
+                <label className="text-[10px] text-gray-500 font-bold uppercase block mb-1">Driver's Full Name</label>
+                <input required type="text" className="w-full text-xs border border-gray-200 p-2 rounded-lg" value={editingDriver.name} onChange={e=>setEditingDriver({...editingDriver, name: e.target.value})} />
+              </div>
+
+              <div className="grid grid-cols-3 gap-3">
+                <div className="col-span-2">
+                  <label className="text-[10px] text-gray-500 font-bold uppercase block mb-1">CDL License Number</label>
+                  <input required type="text" className="w-full text-xs border border-gray-200 p-2 rounded-lg font-mono uppercase" value={editingDriver.cdlNumber} onChange={e=>setEditingDriver({...editingDriver, cdlNumber: e.target.value})} />
+                </div>
+                <div>
+                  <label className="text-[10px] text-gray-500 font-bold uppercase block mb-1">State License</label>
+                  <input required type="text" maxLength={2} className="w-full text-xs border border-gray-200 p-2 rounded-lg font-mono uppercase" value={editingDriver.state} onChange={e=>setEditingDriver({...editingDriver, state: e.target.value})} />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="text-[10px] text-gray-500 font-bold uppercase block mb-1">Contact Phone</label>
+                  <input required type="text" className="w-full text-xs border border-gray-200 p-2 rounded-lg" value={editingDriver.phone} onChange={e=>setEditingDriver({...editingDriver, phone: e.target.value})} />
+                </div>
+                <div>
+                  <label className="text-[10px] text-gray-500 font-bold uppercase block mb-1">Driver Email Address</label>
+                  <input required type="email" className="w-full text-xs border border-gray-200 p-2 rounded-lg" value={editingDriver.email} onChange={e=>setEditingDriver({...editingDriver, email: e.target.value})} />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="text-[10px] text-gray-500 font-bold uppercase block mb-1">CDL Expiration Date</label>
+                  <input required type="date" className="w-full text-xs border border-gray-200 p-2 rounded-lg" value={editingDriver.expirationDate} onChange={e=>setEditingDriver({...editingDriver, expirationDate: e.target.value})} />
+                </div>
+                <div>
+                  <label className="text-[10px] text-gray-500 font-bold uppercase block mb-1">Medical Cert Expiration</label>
+                  <input required type="date" className="w-full text-xs border border-gray-200 p-2 rounded-lg" value={editingDriver.medicalCertExpiry} onChange={e=>setEditingDriver({...editingDriver, medicalCertExpiry: e.target.value})} />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="text-[10px] text-gray-500 font-bold uppercase block mb-1">Status</label>
+                  <select className="w-full text-xs border border-gray-200 p-2 rounded-lg" value={editingDriver.status} onChange={e=>setEditingDriver({...editingDriver, status: e.target.value as any})}>
+                    <option value="Ready">Ready</option>
+                    <option value="On Trip">On Trip</option>
+                    <option value="Off Duty">Off Duty</option>
+                    <option value="Suspended">Suspended</option>
+                  </select>
+                </div>
+              </div>
+
+              <div className="flex justify-end gap-3 pt-4 border-t border-gray-100">
+                <button type="button" onClick={() => setIsEditDriverModalOpen(false)} className="px-4 py-2 border border-gray-200 text-xs text-slate-600 rounded-lg hover:bg-slate-50 font-bold">Cancel</button>
+                <button type="submit" className="px-4 py-2 bg-slate-900 hover:bg-slate-800 text-xs text-white rounded-lg font-bold">Update Driver</button>
               </div>
             </form>
           </div>

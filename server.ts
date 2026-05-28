@@ -242,6 +242,23 @@ app.get('/api/fleet/all', (req, res) => {
   res.json(db);
 });
 
+// Update mileage logs
+app.post('/api/ifta/mileage/update', (req, res) => {
+  const { mileageLogs } = req.body;
+  if (Array.isArray(mileageLogs)) {
+    db.mileageLogs = mileageLogs;
+    db.auditLogs.unshift({
+      timestamp: new Date().toISOString(),
+      user: "Fleet Accountant",
+      action: "Updated IFTA mileage distribution ledger",
+      status: "Success"
+    });
+    res.json({ success: true });
+  } else {
+    res.status(400).json({ error: "Invalid data format" });
+  }
+});
+
 // Update/Sync rates API
 app.post('/api/rate/sync', (req, res) => {
   db.syncStatus = `Synced to IFTA live matrix - Last check: ${new Date().toISOString()}`;
@@ -319,6 +336,42 @@ app.post('/api/vehicles/add', (req, res) => {
   res.json({ success: true, vehicle: newVehicle });
 });
 
+// Edit vehicle
+app.put('/api/vehicles/:id', (req, res) => {
+  const { id } = req.params;
+  const index = db.vehicles.findIndex(v => v.id === id);
+  if (index !== -1) {
+    db.vehicles[index] = { ...db.vehicles[index], ...req.body };
+    db.auditLogs.unshift({
+      timestamp: new Date().toISOString(),
+      user: "Fleet Manager",
+      action: `Updated vehicle Unit ${db.vehicles[index].unitNumber}`,
+      status: `ID: ${id}`
+    });
+    res.json({ success: true, vehicle: db.vehicles[index] });
+  } else {
+    res.status(404).json({ error: "Vehicle not found" });
+  }
+});
+
+// Delete vehicle
+app.delete('/api/vehicles/:id', (req, res) => {
+  const { id } = req.params;
+  const index = db.vehicles.findIndex(v => v.id === id);
+  if (index !== -1) {
+    const removed = db.vehicles.splice(index, 1)[0];
+    db.auditLogs.unshift({
+      timestamp: new Date().toISOString(),
+      user: "Fleet Manager",
+      action: `Removed vehicle Unit ${removed.unitNumber}`,
+      status: `ID: ${id}`
+    });
+    res.json({ success: true });
+  } else {
+    res.status(404).json({ error: "Vehicle not found" });
+  }
+});
+
 // Manage driver addition
 app.post('/api/drivers/add', (req, res) => {
   const driver = req.body;
@@ -367,6 +420,42 @@ app.post('/api/drivers/update-compliance', (req, res) => {
       status: `Fields: ${field}`
     });
     res.json({ success: true, driver });
+  } else {
+    res.status(404).json({ error: "Driver not found" });
+  }
+});
+
+// Edit driver
+app.put('/api/drivers/:id', (req, res) => {
+  const { id } = req.params;
+  const index = db.drivers.findIndex(d => d.id === id);
+  if (index !== -1) {
+    db.drivers[index] = { ...db.drivers[index], ...req.body };
+    db.auditLogs.unshift({
+      timestamp: new Date().toISOString(),
+      user: "Fleet Manager",
+      action: `Updated driver ${db.drivers[index].name}`,
+      status: `ID: ${id}`
+    });
+    res.json({ success: true, driver: db.drivers[index] });
+  } else {
+    res.status(404).json({ error: "Driver not found" });
+  }
+});
+
+// Delete driver
+app.delete('/api/drivers/:id', (req, res) => {
+  const { id } = req.params;
+  const index = db.drivers.findIndex(d => d.id === id);
+  if (index !== -1) {
+    const removed = db.drivers.splice(index, 1)[0];
+    db.auditLogs.unshift({
+      timestamp: new Date().toISOString(),
+      user: "Fleet Manager",
+      action: `Removed driver ${removed.name}`,
+      status: `ID: ${id}`
+    });
+    res.json({ success: true });
   } else {
     res.status(404).json({ error: "Driver not found" });
   }
