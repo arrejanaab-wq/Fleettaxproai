@@ -24,10 +24,13 @@ import SaaSAdminMobileBilling from './components/SaaSAdminMobileBilling';
 import { Vehicle, Driver, FuelPurchase, TaxRate, GpsLog, ComplianceAlert, ChatMessage, UserRole, FleetCompliance, User } from './types';
 
 export default function App() {
-  const [isAuthenticated, setIsAuthenticated] = useState(false);
-  const [loginForm, setLoginForm] = useState({ email: 'owner@fleettax.com', password: 'password123' });
+  const [isAuthenticated, setIsAuthenticated] = useState(true);
   const [activeTab, setActiveTab] = useState('dashboard');
-  const [currentUser, setCurrentUser] = useState<User | null>(null);
+  const [currentUser, setCurrentUser] = useState<User | null>({
+    name: 'Admin User',
+    role: 'Super Admin',
+    email: 'admin@fleettax.com'
+  });
   const [currentRole, setCurrentRole] = useState<UserRole>('Super Admin');
   const [isSidebarOpen, setIsSidebarOpen] = useState(true);
 
