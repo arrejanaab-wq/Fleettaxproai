@@ -490,30 +490,26 @@ You can ask me questions such as:
 }
 
 // Vite Server Integration
-if (!process.env.VERCEL) {
+if (process.env.NODE_ENV !== 'production') {
   async function main() {
-    if (process.env.NODE_ENV !== 'production') {
-      const { createServer } = await import('vite');
-      const vite = await createServer({
-        server: { middlewareMode: true },
-        appType: 'spa',
-      });
-      app.use(vite.middlewares);
-    } else {
-      const distPath = path.join(process.cwd(), 'dist');
-      app.use(express.static(distPath));
-      app.get('*', (req, res) => {
-        res.sendFile(path.join(distPath, 'index.html'));
-      });
-    }
+    const { createServer } = await import('vite');
+    const vite = await createServer({
+      server: { middlewareMode: true },
+      appType: 'spa',
+    });
+    app.use(vite.middlewares);
 
     app.listen(PORT, '0.0.0.0', () => {
-      console.log(`FleetTax Pro AI fullstack server initialized on http://0.0.0.0:${PORT}`);
+      console.log(`FleetTax Pro AI local dev server on http://0.0.0.0:${PORT}`);
     });
   }
-
   main().catch((err) => {
     console.error("Express initialization failed", err);
+  });
+} else if (!process.env.VERCEL) {
+  // Only bind to a port if NOT on Vercel (e.g., local production test)
+  app.listen(PORT, '0.0.0.0', () => {
+    console.log(`FleetTax Pro AI local production server on http://0.0.0.0:${PORT}`);
   });
 }
 
