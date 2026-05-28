@@ -221,23 +221,29 @@ export default function App() {
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
+    console.log("Attempting login with:", loginForm.email);
     try {
       const res = await fetch('/api/login', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(loginForm)
       });
+      console.log("Login response status:", res.status);
       if (res.ok) {
         const data = await res.json();
+        console.log("Login successful, user:", data.user.name);
         setCurrentUser(data.user);
         setCurrentRole(data.user.role);
         setIsAuthenticated(true);
         triggerToast(`Logged in as ${data.user.name}`);
         await refreshAllData();
       } else {
+        const errorData = await res.json().catch(() => ({ error: 'Unknown error' }));
+        console.error("Login failed response:", errorData);
         triggerToast("Invalid login credentials.");
       }
-    } catch {
+    } catch (err) {
+      console.error("Login fetch error:", err);
       triggerToast("Login failed. Check server connection.");
     }
   };
